@@ -1,0 +1,42 @@
+# Standalone compose for NAS / LAN (binds 0.0.0.0 so http://<nas-ip>:3000 works).
+# On the NAS host:
+#   docker compose -f docker-compose.nas.yml --env-file .env up -d --build
+#
+# Optional .env keys: API_KEY, ANTHROPIC_API_KEY, WEB_ORIGIN
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - API_KEY=${API_KEY:-}
+      - API_HOST=0.0.0.0
+      - WEB_ORIGIN=${WEB_ORIGIN:-http://192.168.50.147:3000}
+      - DATA_DIR=/app/data
+      - TRUST_PROXY=${TRUST_PROXY:-}
+    volumes:
+      - terminal-data:/app/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - API_URL=http://api:4000
+      - API_KEY=${API_KEY:-}
+      - API_KEY_FILE=/app/data/.api-key
+    volumes:
+      - terminal-data:/app/data:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  terminal-data:
