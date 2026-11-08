@@ -5,7 +5,9 @@ out/
 *.log
 .env
 .env.local
+docker/.env
 .DS_Store
+.docker-home/
 
 
 # Database

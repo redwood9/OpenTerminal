@@ -1,18 +1,23 @@
-# Standalone compose for NAS / LAN (binds 0.0.0.0 so http://<nas-ip>:3000 works).
-# On the NAS host:
+# NAS / LAN stack (binds 0.0.0.0 so http://<nas-ip>:3000 works).
+# From this directory on the NAS:
 #   docker compose -f docker-compose.nas.yml --env-file .env up -d --build
 #
-# Optional .env keys: API_KEY, ANTHROPIC_API_KEY, WEB_ORIGIN
+# Config: copy .env.example → .env and fill secrets (API_KEY, DeepSeek, NAS SSH, …).
 
 services:
   api:
     build:
-      context: .
-      dockerfile: server/Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile.api
     ports:
-      - "4000:4000"
+      - "${API_PUBLISH_PORT:-4000}:4000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-}
       - API_KEY=${API_KEY:-}
       - API_HOST=0.0.0.0
       - WEB_ORIGIN=${WEB_ORIGIN:-http://192.168.50.147:3000}
@@ -24,10 +29,10 @@ services:
 
   web:
     build:
-      context: .
-      dockerfile: web/Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile.web
     ports:
-      - "3000:3000"
+      - "${WEB_PUBLISH_PORT:-3000}:3000"
     environment:
       - API_URL=http://api:4000
       - API_KEY=${API_KEY:-}

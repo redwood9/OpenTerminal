@@ -49,7 +49,7 @@ app.get("/api/status", (_req, res) => {
     ok: true,
     time: new Date().toISOString(),
     providers: allStats(),
-    ai: Boolean(process.env.ANTHROPIC_API_KEY),
+    ai: Boolean(process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY),
   });
 });
 

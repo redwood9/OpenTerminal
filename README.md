@@ -128,17 +128,16 @@ That's it — no `.env` file required to get a fully working terminal.
 
 ### Optional: AI assistant
 
+Prefer DeepSeek (or Anthropic) via `docker/.env` when using Compose, or export the same vars for local `npm run dev`:
+
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export DEEPSEEK_API_KEY=sk-...
+# optional: DEEPSEEK_BASE_URL / DEEPSEEK_MODEL
+# or: export ANTHROPIC_API_KEY=sk-ant-...
 npm run dev
 ```
 
 Without a key, everything else still works — the AI widget just shows a friendly "unavailable" message instead of failing.
-
-Two optional knobs for the assistant, both standard for the Anthropic SDK:
-
-- `ANTHROPIC_BASE_URL` — point the assistant at an Anthropic-compatible endpoint (a self-hosted gateway, an EU-hosted relay, etc.) instead of api.anthropic.com.
-- `ANTHROPIC_MODEL` — override the model sent in requests (default: `claude-opus-4-8`). Required when the endpoint behind `ANTHROPIC_BASE_URL` serves models under different ids.
 
 ### Security defaults
 
@@ -151,11 +150,17 @@ Two optional knobs for the assistant, both standard for the Anthropic SDK:
 
 ## 🐳 Docker
 
+Compose files and Dockerfiles live under [`docker/`](docker/). Copy [`docker/.env.example`](docker/.env.example) → `docker/.env` and fill secrets (API key, DeepSeek, NAS SSH, …).
+
 ```bash
-docker compose up --build
+cd docker
+cp .env.example .env   # then edit
+docker compose --env-file .env up -d --build
+# NAS / LAN:
+# docker compose -f docker-compose.nas.yml --env-file .env up -d --build
 ```
 
-Portfolio data persists in the `terminal-data` volume (SQLite, WAL mode). Ports are published on `127.0.0.1` only by default; see [Security defaults](#security-defaults) to expose it deliberately.
+Portfolio data persists in the `terminal-data` volume (SQLite, WAL mode). The default compose publishes on `127.0.0.1` only; use `docker-compose.nas.yml` (or see [Security defaults](#security-defaults)) to expose on the LAN.
 
 <br/>
 
@@ -167,19 +172,20 @@ Portfolio data persists in the `terminal-data` volume (SQLite, WAL mode). Ports 
 | Charts | `lightweight-charts` (candles/indicators) · D3 (heatmap treemap) · Recharts (yield curve) |
 | Backend | Node.js · Express · TypeScript |
 | Database | SQLite (`better-sqlite3`, WAL mode) |
-| AI | Anthropic Claude (optional) |
+| AI | DeepSeek or Anthropic Claude (optional, via `docker/.env`) |
 
 <br/>
 
 ## 📁 Project structure
 
 ```
-├── server/                  # Express + TypeScript API
+├── docker/                   # Dockerfiles, compose, .env.example (secrets → docker/.env)
+├── server/                   # Express + TypeScript API
 │   └── src/
-│       ├── providers/       # nasdaq, tradingview, yahoo, stooq, fred, econcalendar, coingecko, binance, news
-│       ├── routes/          # market, portfolio, ai
-│       ├── cache.ts         # TTL cache with stale-while-revalidate fallback
-│       └── db.ts            # SQLite (better-sqlite3, WAL)
+│       ├── providers/        # nasdaq, tradingview, yahoo, stooq, fred, econcalendar, coingecko, binance, news
+│       ├── routes/           # market, portfolio, ai
+│       ├── cache.ts          # TTL cache with stale-while-revalidate fallback
+│       └── db.ts             # SQLite (better-sqlite3, WAL)
 └── web/                      # Next.js 15 + React 19 + Tailwind 4
     ├── components/           # TopBar, Sidebar, Workspace, CommandPalette
     ├── components/widgets/   # Chart, Quote, Watchlist, News, Screener, Heatmap, Crypto, Options, Macro, Portfolio, Calendar, AI
