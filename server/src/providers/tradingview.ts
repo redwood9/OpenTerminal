@@ -125,6 +125,87 @@ export async function marketScan(limit = 1500): Promise<MarketRow[]> {
     .filter((r) => r.symbol && r.exchange !== "OTC");
 }
 
+const LISTING_COLUMNS = ["description", "close", "change", "market_cap_basic", "sector", "volume", "exchange"];
+
+async function scanRegion(region: string, limit: number): Promise<MarketRow[]> {
+  const res = await fetch(`https://scanner.tradingview.com/${region}/scan`, {
+    method: "POST",
+    headers: HEADERS,
+    body: JSON.stringify({
+      columns: LISTING_COLUMNS,
+      filter: [
+        { left: "type", operation: "equal", right: "stock" },
+        { left: "typespecs", operation: "has", right: ["common"] },
+      ],
+      sort: { sortBy: "market_cap_basic", sortOrder: "desc" },
+      range: [0, limit],
+    }),
+  });
+  if (!res.ok) throw new Error(`tradingview scan ${region} ${res.status}`);
+  const json = await res.json();
+  const rows: Array<{ s: string; d: any[] }> = json?.data ?? [];
+  return rows
+    .map((r) => {
+      const [name, close, change, marketCap, sector, volume, exchange] = r.d;
+      return {
+        symbol: r.s.split(":")[1],
+        name: name ?? r.s.split(":")[1],
+        price: close ?? null,
+        changePercent: change ?? null,
+        marketCap: marketCap ?? null,
+        sector: sector || "Other",
+        volume: volume ?? null,
+        exchange: exchange ?? "",
+      };
+    })
+    .filter((r) => r.symbol);
+}
+
+/**
+ * HKEX RMB dual counters prefix the HKD code with 8 (00700 → 80700) and repeat
+ * the same company. Drop the RMB code only when the HKD listing is also present,
+ * so a genuine 8xxxx primary listing is kept.
+ */
+export function dropHkRmbCounters<T extends { symbol: string; name: string }>(rows: T[]): T[] {
+  const hkdNames = new Set(rows.filter((r) => !/^8\d{4}$/.test(r.symbol)).map((r) => r.name));
+  return rows.filter((r) => !/^8\d{4}$/.test(r.symbol) || !hkdNames.has(r.name));
+}
+
+/** Shanghai B-shares are 900xxx; Shenzhen B-shares are 200xxx. */
+export function dropChinaBShares<T extends { symbol: string; exchange: string }>(rows: T[]): T[] {
+  return rows.filter((r) => {
+    const ex = r.exchange.toUpperCase();
+    if (ex === "SSE" && r.symbol.startsWith("900")) return false;
+    if (ex === "SZSE" && r.symbol.startsWith("200")) return false;
+    return true;
+  });
+}
+
+/** Yahoo quote symbol: 700 → 0700.HK, 9988 → 9988.HK. */
+export function hkQuoteSymbol(code: string): string {
+  const digits = code.replace(/\D/g, "");
+  const padded = digits.length < 4 ? digits.padStart(4, "0") : digits;
+  return `${padded}.HK`;
+}
+
+/** Yahoo quote symbol: Shanghai SSE → .SS, Shenzhen SZSE → .SZ. */
+export function cnQuoteSymbol(code: string, exchange: string): string {
+  const suffix = exchange.toUpperCase() === "SZSE" ? "SZ" : "SS";
+  return `${code}.${suffix}`;
+}
+
+/** Top-N Hong Kong listings by market cap, RMB dual counters removed. */
+export async function hongKongMarketScan(limit = 1500): Promise<MarketRow[]> {
+  const rows = dropHkRmbCounters(await scanRegion("hongkong", limit));
+  return rows.map((r) => ({ ...r, symbol: hkQuoteSymbol(r.symbol) }));
+}
+
+/** Top-N Shanghai + Shenzhen A-shares by market cap, B-shares removed. */
+export async function chinaMarketScan(limit = 1500): Promise<MarketRow[]> {
+  const rows = dropChinaBShares(await scanRegion("china", limit));
+  return rows.map((r) => ({ ...r, symbol: cnQuoteSymbol(r.symbol, r.exchange) }));
+}
+
 // Major European markets, one TradingView scanner region per country — there
 // is no combined "whole Europe" region like "america". Each market is scanned
 // for its primary listing venue (e.g. Xetra for Germany, not the seven other

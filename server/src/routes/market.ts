@@ -142,9 +142,12 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
     remaining = remaining.filter((s) => !fetched.has(s));
   }
 
-  const nasdaqResults = await Promise.allSettled(remaining.map((s) => nasdaq.quote(s)));
+  // Nasdaq's quote API only knows bare US tickers. Dotted Yahoo suffixes
+  // (0700.HK, 600519.SS) and index symbols (^HSI) go straight to Yahoo.
+  const nasdaqCandidates = remaining.filter((s) => !s.includes(".") && !s.startsWith("^"));
+  const nasdaqResults = await Promise.allSettled(nasdaqCandidates.map((s) => nasdaq.quote(s)));
   nasdaqResults.forEach((r, i) => {
-    if (r.status === "fulfilled") fetched.set(remaining[i], r.value);
+    if (r.status === "fulfilled") fetched.set(nasdaqCandidates[i], r.value);
   });
   remaining = remaining.filter((s) => !fetched.has(s));
 
@@ -437,9 +440,44 @@ const EU_INDEX_PROXIES: Record<string, string> = {
   EWI: "Italy (EWI)",
 };
 
+// Hong Kong and China A-share index levels. Nasdaq does not carry these, so
+// quotes fall through to Yahoo. The bundle is cached so the widget can poll
+// without hitting Yahoo on every tick.
+const HK_INDEXES: Record<string, string> = {
+  "^HSI": "Hang Seng (^HSI)",
+  "^HSCE": "China Enterprises (^HSCE)",
+  "HSTECH.HK": "Hang Seng TECH",
+};
+
+const CN_INDEXES: Record<string, string> = {
+  "000001.SS": "Shanghai Composite",
+  "000300.SS": "CSI 300",
+  "000016.SS": "SSE 50",
+  "000905.SS": "CSI 500",
+  "399001.SZ": "Shenzhen Component",
+  "399006.SZ": "ChiNext",
+};
+
+const ASIA_INDEX_TTL = 15_000;
+
 marketRouter.get("/macro", async (req, res) => {
   try {
-    if (req.query.region === "eu") {
+    const region = String(req.query.region ?? "us");
+    if (region === "hk" || region === "cn") {
+      const labels = region === "hk" ? HK_INDEXES : CN_INDEXES;
+      const quotes = await cached(`macro-indexes:${region}`, ASIA_INDEX_TTL, () => getQuotes(Object.keys(labels)));
+      const indexes = quotes.map((q) => ({
+        symbol: q.symbol,
+        label: labels[q.symbol] ?? q.symbol,
+        price: q.price,
+        changePercent: q.changePercent,
+      }));
+      if (indexes.length === 0) throw new Error(`no ${region} index data`);
+      res.json({ yields: [], vix: null, indexes, policyRate: null, inflation: null });
+      return;
+    }
+
+    if (region === "eu") {
       const [yieldResults, policyRate, inflation, quotes] = await Promise.all([
         Promise.allSettled(
           EU_YIELD_SERIES.map((s) => cached(`ecb:${s.key}`, 300_000, () => ecb.latest(s.flowRef, s.key)))
@@ -500,11 +538,15 @@ marketRouter.get("/macro", async (req, res) => {
 });
 
 // ---- heatmap + screener over the full market (TradingView scanner — live) ----
-// ?market=eu switches from the whole-US scan to the merged major-European-
-// exchanges scan (see tradingview.europeMarketScan).
+// ?market=eu|hk|cn selects Europe, Hong Kong, or China A-shares. The default
+// is the whole-US scan.
 
-function marketParam(req: any): "us" | "eu" {
-  return req.query.market === "eu" ? "eu" : "us";
+type ScanMarket = "us" | "eu" | "hk" | "cn";
+
+function marketParam(req: any): ScanMarket {
+  const market = String(req.query.market ?? "us");
+  if (market === "eu" || market === "hk" || market === "cn") return market;
+  return "us";
 }
 
 // TradingView reports market cap in each stock's own listing currency (SEK,
@@ -530,7 +572,7 @@ async function eurFxRates(): Promise<Record<string, number>> {
   return rates;
 }
 
-async function marketRows(market: "us" | "eu"): Promise<tradingview.MarketRow[]> {
+async function marketRows(market: ScanMarket): Promise<tradingview.MarketRow[]> {
   if (market === "eu") {
     return cached("marketscan:eu", 5_000, async () => {
       const [rows, fx] = await Promise.all([tradingview.europeMarketScan(1500), eurFxRates()]);
@@ -540,6 +582,8 @@ async function marketRows(market: "us" | "eu"): Promise<tradingview.MarketRow[]>
       });
     });
   }
+  if (market === "hk") return cached("marketscan:hk", 3_000, () => tradingview.hongKongMarketScan(1500));
+  if (market === "cn") return cached("marketscan:cn", 3_000, () => tradingview.chinaMarketScan(1500));
   return cached("marketscan:full", 3_000, () => tradingview.marketScan(1500));
 }
 

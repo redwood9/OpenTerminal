@@ -15,21 +15,31 @@ type MacroData = {
   inflation: number | null;
 };
 
+type MacroRegion = "us" | "hk" | "cn" | "eu";
+const MACRO_REGIONS: Array<{ id: MacroRegion; label: string }> = [
+  { id: "us", label: "US" },
+  { id: "hk", label: "HK" },
+  { id: "cn", label: "A" },
+  { id: "eu", label: "EU" },
+];
+
 export default function MacroWidget() {
   const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
-  const [region, setRegion] = useState<"us" | "eu">("us");
+  const [region, setRegion] = useState<MacroRegion>("us");
   const { data, error } = useQuery({
     queryKey: ["macro", region],
     queryFn: () => apiGet<MacroData>(`/api/macro?region=${region}`),
-    refetchInterval: 1_000,
+    // HK and A-share index levels come from Yahoo, so poll slower than the
+    // Nasdaq-backed US/EU ETF proxies.
+    refetchInterval: region === "hk" || region === "cn" ? 15_000 : 1_000,
   });
 
   return (
     <div>
       <div className="flex gap-1 p-1">
-        {(["us", "eu"] as const).map((r) => (
-          <button key={r} className={`term-btn ${region === r ? "active" : ""}`} onClick={() => setRegion(r)}>
-            {r.toUpperCase()}
+        {MACRO_REGIONS.map((r) => (
+          <button key={r.id} className={`term-btn ${region === r.id ? "active" : ""}`} onClick={() => setRegion(r.id)}>
+            {r.label}
           </button>
         ))}
       </div>
@@ -50,13 +60,21 @@ function MacroBody({
   setActiveSymbol,
 }: {
   data: MacroData;
-  region: "us" | "eu";
+  region: MacroRegion;
   setActiveSymbol: (s: string) => void;
 }) {
   return (
     <div>
       <div className="px-2 py-1 dim text-[10px] uppercase flex justify-between">
-        <span>{region === "eu" ? "Euro Area AAA Yield Curve" : "US Treasury Yield Curve"}</span>
+        <span>
+          {region === "eu"
+            ? "Euro Area AAA Yield Curve"
+            : region === "hk"
+              ? "Hong Kong Indexes"
+              : region === "cn"
+                ? "China A-share Indexes"
+                : "US Treasury Yield Curve"}
+        </span>
         {region === "us" && data.vix !== null && (
           <span className="cursor-pointer" onClick={() => setActiveSymbol("^VIX")}>
             VIX <Flash value={data.vix} className="amber">{fmt(data.vix, 2)}</Flash>
@@ -75,19 +93,21 @@ function MacroBody({
           </span>
         )}
       </div>
-      <div className="h-24 px-1">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data.yields} margin={{ top: 4, right: 12, bottom: 0, left: -22 }}>
-            <XAxis dataKey="tenor" stroke="#808080" fontSize={9} />
-            <YAxis stroke="#808080" fontSize={9} domain={["auto", "auto"]} />
-            <Tooltip
-              contentStyle={{ background: "#111", border: "1px solid #262626", fontSize: 10 }}
-              labelStyle={{ color: "#808080" }}
-            />
-            <Line type="monotone" dataKey="value" stroke="#ff9900" strokeWidth={1.5} dot={{ r: 2 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {data.yields.length > 0 && (
+        <div className="h-24 px-1">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data.yields} margin={{ top: 4, right: 12, bottom: 0, left: -22 }}>
+              <XAxis dataKey="tenor" stroke="#808080" fontSize={9} />
+              <YAxis stroke="#808080" fontSize={9} domain={["auto", "auto"]} />
+              <Tooltip
+                contentStyle={{ background: "#111", border: "1px solid #262626", fontSize: 10 }}
+                labelStyle={{ color: "#808080" }}
+              />
+              <Line type="monotone" dataKey="value" stroke="#ff9900" strokeWidth={1.5} dot={{ r: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
       <table className="data-table">
         <thead>
           <tr><th>Index / Commodity</th><th>Last</th><th>Chg%</th></tr>

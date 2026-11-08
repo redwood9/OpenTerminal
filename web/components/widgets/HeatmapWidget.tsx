@@ -7,6 +7,13 @@ import { apiGet } from "../../lib/api";
 import { useTerminal } from "../../store/terminal";
 
 type Cell = { symbol: string; name: string | null; sector: string; marketCap: number | null; changePercent: number | null };
+type HeatMarket = "us" | "hk" | "cn" | "eu";
+const HEAT_MARKETS: Array<{ id: HeatMarket; label: string }> = [
+  { id: "us", label: "US" },
+  { id: "hk", label: "HK" },
+  { id: "cn", label: "A" },
+  { id: "eu", label: "EU" },
+];
 type Node = { name: string; children?: Node[]; data?: Cell };
 
 function cellColor(chg: number) {
@@ -27,7 +34,7 @@ export default function HeatmapWidget() {
   const setActiveSymbolRef = useRef(setActiveSymbol);
   setActiveSymbolRef.current = setActiveSymbol;
 
-  const [market, setMarket] = useState<"us" | "eu">("us");
+  const [market, setMarket] = useState<HeatMarket>("us");
   const { data, error } = useQuery({
     queryKey: ["heatmap", market],
     queryFn: () => apiGet<Cell[]>(`/api/heatmap?market=${market}`),
@@ -205,15 +212,15 @@ export default function HeatmapWidget() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex gap-1 p-1 shrink-0">
-        {(["us", "eu"] as const).map((m) => (
-          <button key={m} className={`term-btn ${market === m ? "active" : ""}`} onClick={() => setMarket(m)}>
-            {m.toUpperCase()}
+        {HEAT_MARKETS.map((m) => (
+          <button key={m.id} className={`term-btn ${market === m.id ? "active" : ""}`} onClick={() => setMarket(m.id)}>
+            {m.label}
           </button>
         ))}
       </div>
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div ref={ref} className="absolute inset-0 overflow-hidden" />
-        {error ? (
+        {error && !data ? (
           <div className="absolute inset-0 p-2 down bg-[var(--panel)]">Error: {(error as Error).message}</div>
         ) : !data ? (
           <div className="absolute inset-0 p-2 dim">Loading heatmap…</div>
