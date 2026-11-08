@@ -2,7 +2,9 @@
 # From this directory:
 #   docker compose --env-file .env up -d --build
 #
-# Secrets and host settings live in ./env (see .env.example).
+# Secrets and host settings live in ./.env (see .env.example).
+
+name: openterminal
 
 services:
   api:

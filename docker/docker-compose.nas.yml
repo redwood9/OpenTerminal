@@ -4,6 +4,8 @@
 #
 # Config: copy .env.example → .env and fill secrets (API_KEY, DeepSeek, NAS SSH, …).
 
+name: openterminal
+
 services:
   api:
     build:
